@@ -1,51 +1,60 @@
-"use strict";
+/*
+    ============================================
+        MINESWEEPER
+        Discord-compatible version
+    ============================================
+
+    GitHub Pages:
+        index.html
+        style.css
+        game.js
+
+    Discord integration:
+
+        The game calls:
+
+            notifyDiscordGameResult(...)
+
+        when the player wins or loses.
+
+        Later, change DISCORD_API_URL to the
+        public endpoint hosted by your Discord bot.
+*/
 
 
-/* =========================================================
+/* ============================================
    CONFIGURATION
-   ========================================================= */
+============================================ */
 
-/*
-    Your GitHub Pages game can be opened like:
-
-    https://username.github.io/minesweeper/
-        ?session=ABC123
-        &user=123456789
-        &guild=987654321
-*/
-
-const params = new URLSearchParams(window.location.search);
-
-const SESSION_ID = params.get("session");
-const DISCORD_USER_ID = params.get("user");
-const DISCORD_GUILD_ID = params.get("guild");
-
-
-/*
-    IMPORTANT:
-
-    This is your current Cloudflare Quick Tunnel.
-
-    If Cloudflare gives you a NEW trycloudflare.com URL,
-    replace this URL with the new one.
-*/
-
-const DISCORD_API_URL =
-    "https://recognised-cool-welding-geographic.trycloudflare.com/api/minesweeper/result";
-
-
-/*
-    BOARD DIFFICULTY
-*/
-
-const BOARD_WIDTH = 12;
-const BOARD_HEIGHT = 12;
+const BOARD_WIDTH = 8;
+const BOARD_HEIGHT = 8;
 const MINE_COUNT = 20;
 
 
-/* =========================================================
+/*
+    Leave this empty while testing locally.
+
+    Later we'll put something like:
+
+    https://your-bot-domain.com/api/minesweeper/result
+
+    here.
+
+    IMPORTANT:
+
+    Do NOT put your Discord bot token here.
+    Do NOT put any secret API key here.
+
+    Anything inside JavaScript can be seen
+    by the player.
+*/
+
+const DISCORD_API_URL = "https://therapeutic-consisting-infinite-gently.trycloudflare.com/api/minesweeper/result";
+
+
+/* ============================================
    GAME STATE
-   ========================================================= */
+============================================ */
 
 let board = [];
 
@@ -53,66 +62,77 @@ let gameStarted = false;
 let gameOver = false;
 let gameWon = false;
 
-let flagMode = false;
-
-let minesPlaced = false;
-
+let timer = 0;
 let timerInterval = null;
 
-let startTime = null;
-let elapsedSeconds = 0;
+let flagsUsed = 0;
 
 
-/* =========================================================
+/*
+    Optional Discord player information.
+
+    Later the Discord button can open:
+
+    https://your-game.github.io/
+        ?user=123456789
+        &guild=123456789
+
+    The game can then send those IDs
+    back to your bot.
+
+    We don't trust these IDs for rewards
+    by themselves — the bot will verify them.
+*/
+
+const urlParams = new URLSearchParams(
+    window.location.search
+);
+
+const discordUserId =
+    urlParams.get("user") || null;
+
+const discordGuildId =
+    urlParams.get("guild") || null;
+
+
+/* ============================================
    DOM
-   ========================================================= */
+============================================ */
 
 const boardElement =
-    document.getElementById("board");
+    document.getElementById("game-board");
 
-const mineCounterElement =
+const mineCounter =
     document.getElementById("mine-counter");
 
 const timerElement =
     document.getElementById("timer");
 
-const statusTextElement =
-    document.getElementById("status-text");
+const statusElement =
+    document.getElementById("status");
 
-const statusIconElement =
-    document.getElementById("status-icon");
+const newGameButton =
+    document.getElementById("new-game");
 
-const flagModeButton =
-    document.getElementById("flag-mode-button");
+const messageElement =
+    document.getElementById("message");
 
-const restartButton =
-    document.getElementById("restart-button");
+const messageIcon =
+    document.getElementById("message-icon");
 
-const resultOverlay =
-    document.getElementById("result-overlay");
+const messageTitle =
+    document.getElementById("message-title");
 
-const resultIcon =
-    document.getElementById("result-icon");
+const messageDescription =
+    document.getElementById("message-description");
 
-const resultTitle =
-    document.getElementById("result-title");
-
-const resultMessage =
-    document.getElementById("result-message");
-
-const finalTime =
-    document.getElementById("final-time");
-
-const finalMines =
-    document.getElementById("final-mines");
-
-const resultRestart =
-    document.getElementById("result-restart");
+const messageButton =
+    document.getElementById("message-button");
 
 
-/* =========================================================
-   CELL OBJECT
-   ========================================================= */
+/* ============================================
+   CELL CREATION
+============================================ */
 
 function createCell(row, col) {
 
@@ -131,9 +151,9 @@ function createCell(row, col) {
 }
 
 
-/* =========================================================
-   CREATE EMPTY BOARD
-   ========================================================= */
+/* ============================================
+   CREATE BOARD
+============================================ */
 
 function createBoard() {
 
@@ -148,6 +168,7 @@ function createBoard() {
             boardRow.push(
                 createCell(row, col)
             );
+
         }
 
         board.push(boardRow);
@@ -155,88 +176,40 @@ function createBoard() {
 }
 
 
-/* =========================================================
-   PLACE MINES
-   ========================================================= */
+/* ============================================
+   RANDOM MINE PLACEMENT
+============================================ */
 
-function placeMines(safeRow, safeCol) {
+function placeMines() {
 
-    const positions = [];
+    let minesPlaced = 0;
 
-    for (let row = 0; row < BOARD_HEIGHT; row++) {
+    while (minesPlaced < MINE_COUNT) {
 
-        for (let col = 0; col < BOARD_WIDTH; col++) {
-
-            /*
-                Don't place the first mine on the
-                square the player clicked.
-            */
-
-            if (
-                row === safeRow &&
-                col === safeCol
-            ) {
-                continue;
-            }
-
-            positions.push({
-                row: row,
-                col: col
-            });
-        }
-    }
-
-
-    /*
-        Shuffle positions.
-    */
-
-    for (
-        let i = positions.length - 1;
-        i > 0;
-        i--
-    ) {
-
-        const j =
+        const row =
             Math.floor(
-                Math.random() * (i + 1)
+                Math.random() * BOARD_HEIGHT
             );
 
-        [
-            positions[i],
-            positions[j]
-        ] = [
-            positions[j],
-            positions[i]
-        ];
+        const col =
+            Math.floor(
+                Math.random() * BOARD_WIDTH
+            );
+
+        if (board[row][col].mine) {
+            continue;
+        }
+
+        board[row][col].mine = true;
+
+        minesPlaced++;
     }
-
-
-    /*
-        Place mines.
-    */
-
-    for (
-        let i = 0;
-        i < MINE_COUNT;
-        i++
-    ) {
-
-        const position = positions[i];
-
-        board[position.row][position.col].mine = true;
-    }
-
-
-    calculateNumbers();
-
-    minesPlaced = true;
 }
 
 
-/* =========================================================
-   CALCULATE ADJACENT MINES
-   ========================================================= */
+/* ============================================
+   CALCULATE NUMBERS
+============================================ */
 
 function calculateNumbers() {
 
@@ -244,26 +217,24 @@ function calculateNumbers() {
 
         for (let col = 0; col < BOARD_WIDTH; col++) {
 
-            const cell =
-                board[row][col];
+            const cell = board[row][col];
 
             if (cell.mine) {
                 continue;
             }
 
+            const neighbors =
+                getNeighbors(row, col);
+
             let count = 0;
 
-            forEachNeighbor(
-                row,
-                col,
-                neighbor => {
+            for (const neighbor of neighbors) {
 
-                    if (neighbor.mine) {
-                        count++;
-                    }
-
+                if (neighbor.mine) {
+                    count++;
                 }
-            );
+
+            }
 
             cell.adjacentMines = count;
         }
@@ -271,21 +242,15 @@ function calculateNumbers() {
 }
 
 
-/* =========================================================
-   NEIGHBORS
-   ========================================================= */
+/* ============================================
+   GET NEIGHBORS
+============================================ */
 
-function forEachNeighbor(
-    row,
-    col,
-    callback
-) {
+function getNeighbors(row, col) {
 
-    for (
-        let rowOffset = -1;
-        rowOffset <= 1;
-        rowOffset++
-    ) {
+    const neighbors = [];
+
+    for (let rowOffset = -1; rowOffset <= 1; rowOffset++) {
 
         for (
             let colOffset = -1;
@@ -315,116 +280,131 @@ function forEachNeighbor(
                 continue;
             }
 
-            callback(
+            neighbors.push(
                 board[newRow][newCol]
             );
         }
     }
+
+    return neighbors;
 }
 
 
-/* =========================================================
+/* ============================================
    RENDER BOARD
-   ========================================================= */
+============================================ */
 
 function renderBoard() {
 
     boardElement.innerHTML = "";
 
     boardElement.style.gridTemplateColumns =
-        `repeat(${BOARD_WIDTH}, 1fr)`;
-
+        `repeat(${BOARD_WIDTH}, 38px)`;
 
     for (let row = 0; row < BOARD_HEIGHT; row++) {
 
         for (let col = 0; col < BOARD_WIDTH; col++) {
 
-            const cell =
-                board[row][col];
+            const cell = board[row][col];
 
             const element =
-                document.createElement("button");
+                document.createElement("div");
 
-            element.type = "button";
-
-            element.className = "cell";
+            element.classList.add("cell");
 
             element.dataset.row = row;
             element.dataset.col = col;
+
+
+            /* Left click */
+
+            element.addEventListener(
+                "click",
+                () => {
+
+                    handleReveal(row, col);
+
+                }
+            );
+
+
+            /* Right click */
+
+            element.addEventListener(
+                "contextmenu",
+                (event) => {
+
+                    event.preventDefault();
+
+                    handleFlag(row, col);
+
+                }
+            );
+
 
             updateCellElement(
                 element,
                 cell
             );
 
-
-            /*
-                Desktop left click.
-            */
-
-            element.addEventListener(
-                "click",
-                event => {
-
-                    event.preventDefault();
-
-                    handleCellClick(
-                        row,
-                        col
-                    );
-                }
-            );
-
-
-            /*
-                Desktop right click.
-            */
-
-            element.addEventListener(
-                "contextmenu",
-                event => {
-
-                    event.preventDefault();
-
-                    toggleFlag(
-                        row,
-                        col
-                    );
-                }
-            );
-
-
-            boardElement.appendChild(
-                element
-            );
+            boardElement.appendChild(element);
         }
     }
 }
 
 
-/* =========================================================
-   UPDATE CELL VISUAL
-   ========================================================= */
+/* ============================================
+   UPDATE SINGLE CELL
+============================================ */
 
-function updateCellElement(
-    element,
-    cell
-) {
+function updateCellElement(element, cell) {
 
     element.className = "cell";
 
-    element.textContent = "";
+    element.innerHTML = "";
 
+
+    /*
+        Game-over mine display
+    */
+
+    if (
+        gameOver &&
+        cell.mine
+    ) {
+
+        element.classList.add("mine");
+
+        element.textContent = "💣";
+
+        return;
+    }
+
+
+    /*
+        Flag
+    */
 
     if (cell.flagged && !cell.revealed) {
 
         element.classList.add("flagged");
 
-        element.textContent = "🚩";
+        const flag =
+            document.createElement("span");
+
+        flag.className = "flag-icon";
+
+        flag.textContent = "🚩";
+
+        element.appendChild(flag);
 
         return;
     }
 
+
+    /*
+        Hidden cell
+    */
 
     if (!cell.revealed) {
 
@@ -432,8 +412,16 @@ function updateCellElement(
     }
 
 
+    /*
+        Revealed cell
+    */
+
     element.classList.add("revealed");
 
+
+    /*
+        Mine
+    */
 
     if (cell.mine) {
 
@@ -444,6 +432,10 @@ function updateCellElement(
         return;
     }
 
+
+    /*
+        Number
+    */
 
     if (cell.adjacentMines > 0) {
 
@@ -457,23 +449,11 @@ function updateCellElement(
 }
 
 
-/* =========================================================
-   GET CELL ELEMENT
-   ========================================================= */
+/* ============================================
+   REVEAL
+============================================ */
 
-function getCellElement(row, col) {
-
-    return boardElement.querySelector(
-        `.cell[data-row="${row}"][data-col="${col}"]`
-    );
-}
-
-
-/* =========================================================
-   HANDLE CELL CLICK
-   ========================================================= */
-
-function handleCellClick(row, col) {
+function handleReveal(row, col) {
 
     if (gameOver) {
         return;
@@ -484,19 +464,7 @@ function handleCellClick(row, col) {
 
 
     /*
-        Flag mode on mobile.
-    */
-
-    if (flagMode) {
-
-        toggleFlag(row, col);
-
-        return;
-    }
-
-
-    /*
-        Don't reveal flagged cells.
+        Can't reveal flags
     */
 
     if (cell.flagged) {
@@ -505,8 +473,7 @@ function handleCellClick(row, col) {
 
 
     /*
-        First move starts the game
-        and generates the mines.
+        Start timer on first move
     */
 
     if (!gameStarted) {
@@ -515,85 +482,53 @@ function handleCellClick(row, col) {
 
         startTimer();
 
-        placeMines(
-            row,
-            col
+        setStatus(
+            "PLAYING",
+            "status-playing"
         );
     }
 
 
-    revealCell(
-        row,
-        col
-    );
-}
-
-
-/* =========================================================
-   REVEAL CELL
-   ========================================================= */
-
-function revealCell(row, col) {
-
-    if (gameOver) {
-        return;
-    }
-
-    const cell =
-        board[row][col];
-
+    /*
+        Already revealed
+    */
 
     if (cell.revealed) {
+
+        /*
+            Optional chord behavior.
+
+            If the player clicks a revealed
+            number and has correctly flagged
+            all surrounding mines, reveal
+            the remaining neighbors.
+        */
+
+        handleChord(row, col);
+
         return;
     }
-
-
-    if (cell.flagged) {
-        return;
-    }
-
-
-    cell.revealed = true;
 
 
     /*
-        Mine = lose.
+        Mine hit
     */
 
     if (cell.mine) {
 
-        loseGame();
+        cell.revealed = true;
+
+        endGame(false);
 
         return;
     }
 
 
     /*
-        Automatically reveal empty areas.
+        Safe reveal
     */
 
-    if (cell.adjacentMines === 0) {
-
-        forEachNeighbor(
-            row,
-            col,
-            neighbor => {
-
-                if (
-                    !neighbor.revealed &&
-                    !neighbor.flagged &&
-                    !neighbor.mine
-                ) {
-
-                    revealCell(
-                        neighbor.row,
-                        neighbor.col
-                    );
-                }
-            }
-        );
-    }
-
+    revealArea(row, col);
 
     renderBoard();
 
@@ -601,11 +536,149 @@ function revealCell(row, col) {
 }
 
 
-/* =========================================================
-   FLAG
-   ========================================================= */
+/* ============================================
+   REVEAL EMPTY AREA
+============================================ */
 
-function toggleFlag(row, col) {
+function revealArea(row, col) {
+
+    const queue = [
+        board[row][col]
+    ];
+
+    const visited = new Set();
+
+
+    while (queue.length > 0) {
+
+        const cell =
+            queue.shift();
+
+        const key =
+            `${cell.row},${cell.col}`;
+
+        if (visited.has(key)) {
+            continue;
+        }
+
+        visited.add(key);
+
+
+        if (
+            cell.mine ||
+            cell.flagged ||
+            cell.revealed
+        ) {
+            continue;
+        }
+
+
+        cell.revealed = true;
+
+
+        /*
+            Empty cell.
+
+            Automatically open neighbors.
+        */
+
+        if (cell.adjacentMines === 0) {
+
+            const neighbors =
+                getNeighbors(
+                    cell.row,
+                    cell.col
+                );
+
+            for (const neighbor of neighbors) {
+
+                if (
+                    !neighbor.mine &&
+                    !neighbor.flagged &&
+                    !neighbor.revealed
+                ) {
+
+                    queue.push(neighbor);
+                }
+            }
+        }
+    }
+}
+
+
+/* ============================================
+   CHORD
+============================================ */
+
+function handleChord(row, col) {
+
+    const cell =
+        board[row][col];
+
+    if (
+        !cell.revealed ||
+        cell.adjacentMines === 0
+    ) {
+        return;
+    }
+
+    const neighbors =
+        getNeighbors(row, col);
+
+    const flaggedCount =
+        neighbors.filter(
+            neighbor => neighbor.flagged
+        ).length;
+
+
+    /*
+        Only chord if the number of flags
+        matches the displayed number.
+    */
+
+    if (
+        flaggedCount !==
+        cell.adjacentMines
+    ) {
+        return;
+    }
+
+
+    for (const neighbor of neighbors) {
+
+        if (
+            neighbor.revealed ||
+            neighbor.flagged
+        ) {
+            continue;
+        }
+
+        if (neighbor.mine) {
+
+            neighbor.revealed = true;
+
+            endGame(false);
+
+            return;
+        }
+
+        revealArea(
+            neighbor.row,
+            neighbor.col
+        );
+    }
+
+    renderBoard();
+
+    checkWin();
+}
+
+
+/* ============================================
+   FLAG
+============================================ */
+
+function handleFlag(row, col) {
 
     if (gameOver) {
         return;
@@ -620,73 +693,82 @@ function toggleFlag(row, col) {
     }
 
 
-    cell.flagged =
-        !cell.flagged;
+    /*
+        Start game if flagging first
+    */
 
+    if (!gameStarted) {
 
-    renderBoard();
+        gameStarted = true;
 
-    updateMineCounter();
-}
+        startTimer();
 
-
-/* =========================================================
-   MINE COUNTER
-   ========================================================= */
-
-function updateMineCounter() {
-
-    let flagCount = 0;
-
-    for (let row = 0; row < BOARD_HEIGHT; row++) {
-
-        for (let col = 0; col < BOARD_WIDTH; col++) {
-
-            if (
-                board[row][col].flagged
-            ) {
-                flagCount++;
-            }
-        }
+        setStatus(
+            "PLAYING",
+            "status-playing"
+        );
     }
 
 
-    const remaining =
-        Math.max(
-            0,
-            MINE_COUNT - flagCount
-        );
+    /*
+        Toggle flag
+    */
 
-    mineCounterElement.textContent =
-        remaining;
+    if (cell.flagged) {
+
+        cell.flagged = false;
+
+        flagsUsed--;
+
+    } else {
+
+        /*
+            Don't allow more flags than mines.
+        */
+
+        if (flagsUsed >= MINE_COUNT) {
+            return;
+        }
+
+        cell.flagged = true;
+
+        flagsUsed++;
+    }
+
+
+    updateMineCounter();
+
+    renderBoard();
+
+    checkWin();
 }
 
 
-/* =========================================================
+/* ============================================
    WIN CHECK
-   ========================================================= */
+============================================ */
 
 function checkWin() {
+
+    if (gameOver) {
+        return;
+    }
 
     let safeCellsRevealed = 0;
 
     const totalSafeCells =
-        (
-            BOARD_WIDTH *
-            BOARD_HEIGHT
-        ) - MINE_COUNT;
+        BOARD_WIDTH *
+        BOARD_HEIGHT -
+        MINE_COUNT;
 
 
     for (let row = 0; row < BOARD_HEIGHT; row++) {
 
         for (let col = 0; col < BOARD_WIDTH; col++) {
 
-            const cell =
-                board[row][col];
-
             if (
-                cell.revealed &&
-                !cell.mine
+                board[row][col].revealed &&
+                !board[row][col].mine
             ) {
 
                 safeCellsRevealed++;
@@ -696,350 +778,345 @@ function checkWin() {
 
 
     if (
-        safeCellsRevealed >=
+        safeCellsRevealed ===
         totalSafeCells
     ) {
 
-        winGame();
+        endGame(true);
     }
 }
 
 
-/* =========================================================
-   WIN GAME
-   ========================================================= */
+/* ============================================
+   END GAME
+============================================ */
 
-async function winGame() {
-
-    if (gameOver) {
-        return;
-    }
+function endGame(won) {
 
     gameOver = true;
-    gameWon = true;
+
+    gameWon = won;
 
     stopTimer();
 
 
-    /*
-        Automatically flag remaining mines.
-    */
+    if (won) {
 
-    for (let row = 0; row < BOARD_HEIGHT; row++) {
+        /*
+            Automatically flag all mines.
+        */
 
-        for (let col = 0; col < BOARD_WIDTH; col++) {
+        for (let row = 0; row < BOARD_HEIGHT; row++) {
 
-            const cell =
-                board[row][col];
+            for (let col = 0; col < BOARD_WIDTH; col++) {
 
-            if (cell.mine) {
-                cell.flagged = true;
+                const cell =
+                    board[row][col];
+
+                if (cell.mine) {
+                    cell.flagged = true;
+                }
             }
         }
+
+        flagsUsed = MINE_COUNT;
+
+        setStatus(
+            "WON",
+            "status-won"
+        );
+
+        showMessage(
+            "🎉",
+            "YOU WIN!",
+            `You cleared the field in ${timer} seconds.`,
+            true
+        );
+
+    } else {
+
+        setStatus(
+            "LOST",
+            "status-lost"
+        );
+
+        showMessage(
+            "💥",
+            "BOOM!",
+            "You hit a mine.",
+            false
+        );
     }
 
+
+    updateMineCounter();
 
     renderBoard();
 
 
-    statusIconElement.textContent = "🎉";
-
-    statusTextElement.textContent =
-        "You cleared the board!";
-
-
-    showResult(
-        true
-    );
-
-
     /*
-        Tell the Discord bot.
+        Tell Discord bot about result.
     */
 
-    await sendGameResult(true);
+    notifyDiscordGameResult(won);
 }
 
 
-/* =========================================================
-   LOSE GAME
-   ========================================================= */
+/* ============================================
+   DISCORD CALLBACK
+============================================ */
 
-async function loseGame() {
+let discordResultSent = false;
 
-    if (gameOver) {
+async function notifyDiscordGameResult(won) {
+
+    /*
+        Prevent the same Minesweeper game from
+        sending multiple results to Discord.
+    */
+
+    if (discordResultSent) {
+
+        console.log(
+            "[Minesweeper] Result already sent. Ignoring duplicate."
+        );
+
         return;
     }
 
-    gameOver = true;
-    gameWon = false;
-
-    stopTimer();
+    discordResultSent = true;
 
 
     /*
-        Reveal all mines.
+        During development, if no API URL exists,
+        just log the result.
     */
 
-    for (let row = 0; row < BOARD_HEIGHT; row++) {
+    if (!DISCORD_API_URL) {
 
-        for (let col = 0; col < BOARD_WIDTH; col++) {
-
-            if (board[row][col].mine) {
-
-                board[row][col].revealed = true;
+        console.log(
+            "[Minesweeper] Game result:",
+            {
+                won: won,
+                time: timer,
+                user: discordUserId,
+                guild: discordGuildId
             }
-        }
-    }
-
-
-    renderBoard();
-
-
-    statusIconElement.textContent = "💥";
-
-    statusTextElement.textContent =
-        "Boom! You hit a mine.";
-
-
-    showResult(
-        false
-    );
-
-
-    /*
-        Tell Discord the player lost.
-
-        The bot should NOT award anything
-        for this result.
-    */
-
-    await sendGameResult(false);
-}
-
-
-/* =========================================================
-   SEND RESULT TO DISCORD BOT
-   ========================================================= */
-
-async function sendGameResult(won) {
-
-    /*
-        If the game wasn't opened through Discord,
-        there is nowhere to send the result.
-    */
-
-    if (!SESSION_ID) {
-
-        console.warn(
-            "[Minesweeper] No session ID."
         );
 
         return;
     }
 
 
+    /*
+        Information sent to the Discord bot.
+    */
+
     const result = {
 
-        session: SESSION_ID,
+        user_id: discordUserId,
 
-        user_id:
-            DISCORD_USER_ID,
+        guild_id: discordGuildId,
 
-        guild_id:
-            DISCORD_GUILD_ID,
+        game: "minesweeper",
 
-        game:
-            "minesweeper",
+        won: won,
 
-        won:
-            won,
+        time: timer,
 
-        time:
-            elapsedSeconds,
+        board_width: BOARD_WIDTH,
 
-        board_width:
-            BOARD_WIDTH,
+        board_height: BOARD_HEIGHT,
 
-        board_height:
-            BOARD_HEIGHT,
+        mines: MINE_COUNT,
 
-        mines:
-            MINE_COUNT,
-
-        timestamp:
-            Date.now()
+        timestamp: Date.now()
     };
 
 
     try {
 
-        const response =
-            await fetch(
-                DISCORD_API_URL,
-                {
-                    method: "POST",
+        const response = await fetch(
+            DISCORD_API_URL,
+            {
+                method: "POST",
 
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
+                headers: {
+                    "Content-Type": "application/json"
+                },
 
-                    body:
-                        JSON.stringify(result)
-                }
-            );
+                body: JSON.stringify(result)
+            }
+        );
 
 
         if (!response.ok) {
 
             console.error(
-                "[Minesweeper] Server returned:",
+                "[Minesweeper] Discord API error:",
                 response.status
             );
+
+            /*
+                If the server failed, allow the player
+                to retry instead of permanently marking
+                the result as sent.
+            */
+
+            discordResultSent = false;
 
             return;
         }
 
 
-        const data =
-            await response.json();
+        const data = await response.json().catch(() => null);
 
 
         console.log(
-            "[Minesweeper] Result sent:",
+            "[Minesweeper] Result sent to Discord.",
             data
         );
 
+
     } catch (error) {
 
+        /*
+            Network/CORS/Cloudflare failure.
+
+            Allow another attempt.
+        */
+
+        discordResultSent = false;
+
         console.error(
-            "[Minesweeper] Failed to send result:",
+            "[Minesweeper] Could not contact Discord bot:",
             error
         );
     }
 }
 
 
-/* =========================================================
+/* ============================================
    TIMER
-   ========================================================= */
+============================================ */
 
 function startTimer() {
 
-    if (timerInterval !== null) {
-        return;
-    }
-
-    startTime =
-        Date.now();
-
+    stopTimer();
 
     timerInterval =
-        setInterval(
-            updateTimer,
-            250
-        );
-}
+        setInterval(() => {
 
+            timer++;
 
-function updateTimer() {
+            updateTimer();
 
-    if (!startTime) {
-        return;
-    }
-
-
-    elapsedSeconds =
-        Math.floor(
-            (
-                Date.now() -
-                startTime
-            ) / 1000
-        );
-
-
-    timerElement.textContent =
-        formatTime(
-            elapsedSeconds
-        );
+        }, 1000);
 }
 
 
 function stopTimer() {
 
-    if (
-        timerInterval !== null
-    ) {
+    if (timerInterval !== null) {
 
-        clearInterval(
-            timerInterval
-        );
+        clearInterval(timerInterval);
 
         timerInterval = null;
     }
-
-
-    updateTimer();
 }
 
 
-function formatTime(seconds) {
+function updateTimer() {
 
-    const minutes =
-        Math.floor(
-            seconds / 60
-        );
-
-    const remainingSeconds =
-        seconds % 60;
+    timerElement.textContent =
+        String(timer).padStart(3, "0");
+}
 
 
-    return (
-        String(minutes).padStart(2, "0") +
-        ":" +
-        String(remainingSeconds).padStart(2, "0")
+/* ============================================
+   MINE COUNTER
+============================================ */
+
+function updateMineCounter() {
+
+    const remaining =
+        MINE_COUNT -
+        flagsUsed;
+
+    mineCounter.textContent =
+        String(remaining).padStart(2, "0");
+}
+
+
+/* ============================================
+   STATUS
+============================================ */
+
+function setStatus(
+    text,
+    className
+) {
+
+    statusElement.textContent =
+        text;
+
+    statusElement.className =
+        `stat-value ${className}`;
+}
+
+
+/* ============================================
+   MESSAGE
+============================================ */
+
+function showMessage(
+    icon,
+    title,
+    description,
+    won
+) {
+
+    messageElement.classList.remove(
+        "hidden"
     );
+
+    messageIcon.textContent =
+        icon;
+
+    messageTitle.textContent =
+        title;
+
+    messageDescription.textContent =
+        description;
+
+    messageButton.textContent =
+        "Play Again";
+
+
+    if (won) {
+
+        messageTitle.style.color =
+            "var(--green)";
+
+    } else {
+
+        messageTitle.style.color =
+            "var(--red)";
+    }
 }
 
 
-/* =========================================================
-   FLAG MODE
-   ========================================================= */
+/* ============================================
+   NEW GAME
+============================================ */
 
-function toggleFlagMode() {
-
-    flagMode =
-        !flagMode;
-
-
-    flagModeButton.classList.toggle(
-        "flag-active",
-        flagMode
-    );
-
-
-    flagModeButton.textContent =
-        flagMode
-            ? "🚩 Flag Mode: ON"
-            : "🚩 Flag Mode: OFF";
-}
-
-
-flagModeButton.addEventListener(
-    "click",
-    toggleFlagMode
-);
-
-
-/* =========================================================
-   RESTART
-   ========================================================= */
-
-function restartGame() {
+function newGame() {
 
     stopTimer();
 
+    timer = 0;
+
+    flagsUsed = 0;
 
     gameStarted = false;
 
@@ -1047,134 +1124,46 @@ function restartGame() {
 
     gameWon = false;
 
-    flagMode = false;
+    updateTimer();
 
-    minesPlaced = false;
+    updateMineCounter();
 
-    elapsedSeconds = 0;
-
-    startTime = null;
-
-
-    timerElement.textContent =
-        "00:00";
-
-
-    flagModeButton.classList.remove(
-        "flag-active"
+    setStatus(
+        "READY",
+        "status-ready"
     );
 
-
-    flagModeButton.textContent =
-        "🚩 Flag Mode: OFF";
-
-
-    statusIconElement.textContent =
-        "💣";
-
-
-    statusTextElement.textContent =
-        "Clear the board!";
-
-
-    resultOverlay.classList.add(
+    messageElement.classList.add(
         "hidden"
     );
-
 
     createBoard();
 
+    placeMines();
+
+    calculateNumbers();
+
     renderBoard();
-
-    updateMineCounter();
 }
 
 
-restartButton.addEventListener(
+/* ============================================
+   BUTTONS
+============================================ */
+
+newGameButton.addEventListener(
     "click",
-    restartGame
+    newGame
 );
 
-
-resultRestart.addEventListener(
+messageButton.addEventListener(
     "click",
-    restartGame
+    newGame
 );
 
 
-/* =========================================================
-   PREVENT MOBILE CONTEXT MENU
-   ========================================================= */
+/* ============================================
+   START
+============================================ */
 
-boardElement.addEventListener(
-    "contextmenu",
-    event => {
-
-        event.preventDefault();
-    }
-);
-
-
-/* =========================================================
-   PREVENT LONG-PRESS SELECTION
-   ========================================================= */
-
-boardElement.addEventListener(
-    "selectstart",
-    event => {
-
-        event.preventDefault();
-    }
-);
-
-
-/* =========================================================
-   RESULT SCREEN
-   ========================================================= */
-
-function showResult(won) {
-
-    finalTime.textContent =
-        formatTime(
-            elapsedSeconds
-        );
-
-    finalMines.textContent =
-        MINE_COUNT;
-
-
-    if (won) {
-
-        resultIcon.textContent =
-            "🎉";
-
-        resultTitle.textContent =
-            "You Won!";
-
-        resultMessage.textContent =
-            "You cleared every safe square!";
-
-    } else {
-
-        resultIcon.textContent =
-            "💥";
-
-        resultTitle.textContent =
-            "Boom!";
-
-        resultMessage.textContent =
-            "You hit a mine. Better luck next time!";
-    }
-
-
-    resultOverlay.classList.remove(
-        "hidden"
-    );
-}
-
-
-/* =========================================================
-   INITIALIZE
-   ========================================================= */
-
-restartGame();
+newGame();
