@@ -26,8 +26,8 @@
    CONFIGURATION
 ============================================ */
 
-const BOARD_WIDTH = 8;
-const BOARD_HEIGHT = 8;
+const BOARD_WIDTH = 12;
+const BOARD_HEIGHT = 12;
 const MINE_COUNT = 20;
 
 
