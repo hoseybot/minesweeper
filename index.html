@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Minesweeper</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="background-glow"></div>
+
+<main class="game-container">
+
+    <header class="game-header">
+
+        <div>
+            <div class="game-title">
+                <span class="bomb-icon">💣</span>
+                MINESWEEPER
+            </div>
+
+            <div class="subtitle">
+                Clear the field. Don't hit a mine.
+            </div>
+        </div>
+
+        <button id="new-game" class="new-game-button">
+            ↻ New Game
+        </button>
+
+    </header>
+
+
+    <section class="stats">
+
+        <div class="stat-box">
+
+            <div class="stat-label">
+                MINES
+            </div>
+
+            <div id="mine-counter" class="stat-value">
+                40
+            </div>
+
+        </div>
+
+
+        <div class="stat-box timer-box">
+
+            <div class="stat-label">
+                TIME
+            </div>
+
+            <div id="timer" class="stat-value">
+                000
+            </div>
+
+        </div>
+
+
+        <div class="stat-box">
+
+            <div class="stat-label">
+                STATUS
+            </div>
+
+            <div id="status" class="stat-value status-ready">
+                READY
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <section class="board-wrapper">
+
+        <div id="game-board" class="game-board"></div>
+
+    </section>
+
+
+    <div id="message" class="game-message hidden">
+
+        <div id="message-icon" class="message-icon">
+            🎉
+        </div>
+
+        <div id="message-title" class="message-title">
+            YOU WIN!
+        </div>
+
+        <div id="message-description" class="message-description">
+            Field cleared.
+        </div>
+
+        <button id="message-button" class="message-button">
+            Play Again
+        </button>
+
+    </div>
+
+
+    <footer class="game-footer">
+
+        <span>
+            Left click: Reveal
+        </span>
+
+        <span>
+            Right click: Flag
+        </span>
+
+    </footer>
+
+</main>
+
+
+<script src="game.js"></script>
+
+</body>
+</html>
