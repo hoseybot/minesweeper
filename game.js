@@ -31,7 +31,7 @@ const DISCORD_GUILD_ID = params.get("guild");
 */
 
 const DISCORD_API_URL =
-    "https://therapeutic-consisting-infinite-gently.trycloudflare.com/api/minesweeper/result";
+    "https://recognised-cool-welding-geographic.trycloudflare.com";
 
 
 /*
